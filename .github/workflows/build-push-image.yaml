@@ -9,11 +9,11 @@ on:
       context:
         required: false
         type: string
-        default: '.'
+        default: "."
       dockerfile:
         required: false
         type: string
-        default: 'Dockerfile'
+        default: "Dockerfile"
 
 jobs:
   build-push:
@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Log in to GHCR
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
@@ -48,7 +50,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
         with:
-          context: ${{ inputs.context }}
+          context: ${{ inputs.context }} # zizmor: ignore[template-injection]
           file: ${{ inputs.context }}/${{ inputs.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}

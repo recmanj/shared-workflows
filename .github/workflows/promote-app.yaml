@@ -39,41 +39,55 @@ jobs:
     steps:
       - name: Validate inputs
         run: |
-          if [[ "${{ inputs.deployment_type }}" == "kustomize" && -z "${{ inputs.image_name }}" ]]; then
+          if [[ "${INPUTS_DEPLOYMENT_TYPE}" == "kustomize" && -z "${INPUTS_IMAGE_NAME}" ]]; then
             echo "Error: image_name is required for kustomize deployments"
             exit 1
           fi
+        env:
+          INPUTS_DEPLOYMENT_TYPE: ${{ inputs.deployment_type }}
+          INPUTS_IMAGE_NAME: ${{ inputs.image_name }}
 
       - name: Checkout argocd-demo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: recmanj/argocd-demo
-          token: ${{ secrets.ARGOCD_REPO_TOKEN }}
+          token: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           ref: main
+          persist-credentials: false
 
       - name: Update chart version (Helm)
         if: inputs.deployment_type == 'helm'
         run: |
-          CONFIG_FILE="apps/apps-helm/${{ inputs.app_name }}/envs/${{ inputs.environment }}/config.json"
+          CONFIG_FILE="apps/apps-helm/${INPUTS_APP_NAME}/envs/${INPUTS_ENVIRONMENT}/config.json"
           if [ ! -f "$CONFIG_FILE" ]; then
             echo "Error: $CONFIG_FILE not found"
             exit 1
           fi
-          jq --arg v "${{ inputs.version }}" '.version = $v' "$CONFIG_FILE" > tmp.json && mv tmp.json "$CONFIG_FILE"
+          jq --arg v "${INPUTS_VERSION}" '.version = $v' "$CONFIG_FILE" > tmp.json && mv tmp.json "$CONFIG_FILE"
           echo "Updated $CONFIG_FILE:"
           cat "$CONFIG_FILE"
+        env:
+          INPUTS_APP_NAME: ${{ inputs.app_name }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_VERSION: ${{ inputs.version }}
 
       - name: Update image tag (Kustomize)
         if: inputs.deployment_type == 'kustomize'
         run: |
-          KUSTOMIZATION_FILE="apps/apps-kustomize/${{ inputs.kustomize_app }}/envs/${{ inputs.environment }}/kustomization.yaml"
-          if [ ! -f "$KUSTOMIZATION_FILE" ]; then
-            echo "Error: $KUSTOMIZATION_FILE not found"
+          VERSIONS_FILE="apps/apps-kustomize/${INPUTS_KUSTOMIZE_APP}/envs/${INPUTS_ENVIRONMENT}/versions.yaml"
+          if [ ! -f "$VERSIONS_FILE" ]; then
+            echo "Error: $VERSIONS_FILE not found"
             exit 1
           fi
-          yq -i '(.images[] | select(.name == "${{ inputs.image_name }}")).newTag = "${{ inputs.version }}"' "$KUSTOMIZATION_FILE"
-          echo "Updated $KUSTOMIZATION_FILE:"
-          cat "$KUSTOMIZATION_FILE"
+          yq -i '(select(.metadata.name == strenv(INPUTS_APP_NAME)) | .spec.template.spec.containers[0]).image = strenv(INPUTS_IMAGE_NAME) + ":" + strenv(INPUTS_VERSION)' "$VERSIONS_FILE"
+          echo "Updated $VERSIONS_FILE:"
+          cat "$VERSIONS_FILE"
+        env:
+          INPUTS_KUSTOMIZE_APP: ${{ inputs.kustomize_app }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          INPUTS_APP_NAME: ${{ inputs.app_name }}
+          INPUTS_IMAGE_NAME: ${{ inputs.image_name }}
+          INPUTS_VERSION: ${{ inputs.version }}
 
       - name: Commit and push
         run: |
@@ -81,5 +95,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "promote: ${{ inputs.app_name }} to ${{ inputs.version }} in ${{ inputs.environment }}"
+          git commit -m "promote: ${INPUTS_APP_NAME} to ${INPUTS_VERSION} in ${INPUTS_ENVIRONMENT}"
           git push
+        env:
+          INPUTS_APP_NAME: ${{ inputs.app_name }}
+          INPUTS_VERSION: ${{ inputs.version }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
