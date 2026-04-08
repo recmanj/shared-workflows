@@ -47,13 +47,12 @@ jobs:
           INPUTS_DEPLOYMENT_TYPE: ${{ inputs.deployment_type }}
           INPUTS_IMAGE_NAME: ${{ inputs.image_name }}
 
-      - name: Checkout argocd-demo
+      - name: Checkout argocd-demo # zizmor: ignore[artipacked]
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: recmanj/argocd-demo
           token: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           ref: main
-          persist-credentials: false
 
       - name: Update chart version (Helm)
         if: inputs.deployment_type == 'helm'
