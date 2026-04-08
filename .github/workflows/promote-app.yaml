@@ -1,0 +1,85 @@
+name: Promote App
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment (test, staging, prod)"
+        required: true
+        type: string
+      deployment_type:
+        description: "Deployment type (helm or kustomize)"
+        required: true
+        type: string
+      app_name:
+        description: "App name in argocd-demo (e.g., demo-frontend, demo-backend)"
+        required: true
+        type: string
+      version:
+        description: "Version to promote — chart version for helm, image tag for kustomize"
+        required: true
+        type: string
+      image_name:
+        description: "Full image name without tag (required for kustomize, e.g., ghcr.io/recmanj/demo-frontend)"
+        required: false
+        type: string
+        default: ""
+      kustomize_app:
+        description: "Kustomize app directory name (default: demo-app)"
+        required: false
+        type: string
+        default: "demo-app"
+    secrets:
+      ARGOCD_REPO_TOKEN:
+        required: true
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ "${{ inputs.deployment_type }}" == "kustomize" && -z "${{ inputs.image_name }}" ]]; then
+            echo "Error: image_name is required for kustomize deployments"
+            exit 1
+          fi
+
+      - name: Checkout argocd-demo
+        uses: actions/checkout@v4
+        with:
+          repository: recmanj/argocd-demo
+          token: ${{ secrets.ARGOCD_REPO_TOKEN }}
+          ref: main
+
+      - name: Update chart version (Helm)
+        if: inputs.deployment_type == 'helm'
+        run: |
+          CONFIG_FILE="apps/apps-helm/${{ inputs.app_name }}/envs/${{ inputs.environment }}/config.json"
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "Error: $CONFIG_FILE not found"
+            exit 1
+          fi
+          jq --arg v "${{ inputs.version }}" '.version = $v' "$CONFIG_FILE" > tmp.json && mv tmp.json "$CONFIG_FILE"
+          echo "Updated $CONFIG_FILE:"
+          cat "$CONFIG_FILE"
+
+      - name: Update image tag (Kustomize)
+        if: inputs.deployment_type == 'kustomize'
+        run: |
+          KUSTOMIZATION_FILE="apps/apps-kustomize/${{ inputs.kustomize_app }}/envs/${{ inputs.environment }}/kustomization.yaml"
+          if [ ! -f "$KUSTOMIZATION_FILE" ]; then
+            echo "Error: $KUSTOMIZATION_FILE not found"
+            exit 1
+          fi
+          yq -i '(.images[] | select(.name == "${{ inputs.image_name }}")).newTag = "${{ inputs.version }}"' "$KUSTOMIZATION_FILE"
+          echo "Updated $KUSTOMIZATION_FILE:"
+          cat "$KUSTOMIZATION_FILE"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "promote: ${{ inputs.app_name }} to ${{ inputs.version }} in ${{ inputs.environment }}"
+          git push
