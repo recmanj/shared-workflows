@@ -3,6 +3,10 @@ name: Promote App
 on:
   workflow_call:
     inputs:
+      argocd_repository:
+        description: "Target ArgoCD repository"
+        required: true
+        type: string
       environment:
         description: "Target environment (test, staging, prod)"
         required: true
@@ -29,6 +33,11 @@ on:
         required: false
         type: string
         default: "demo-app"
+      automerge_envs:
+        description: "Environments for which promotion PRs should be auto-merged. Comma-separated list (no spaces), e.g. 'test,staging'"
+        required: false
+        type: string
+        default: "test"
     secrets:
       ARGOCD_REPO_TOKEN:
         required: true
@@ -50,7 +59,7 @@ jobs:
       - name: Checkout argocd-demo # zizmor: ignore[artipacked]
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          repository: recmanj/argocd-demo
+          repository: ${{ inputs.argocd_repository }}
           token: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           ref: main
 
@@ -88,15 +97,46 @@ jobs:
           INPUTS_IMAGE_NAME: ${{ inputs.image_name }}
           INPUTS_VERSION: ${{ inputs.version }}
 
-      - name: Commit and push
+      - name: Create git branch
+        id: git_branch
+        run: |
+          safe_app=$(echo "${INPUTS_APP_NAME}" | tr -cs 'a-zA-Z0-9-' '-' | sed 's/-$//')
+          safe_version=$(echo "${INPUTS_VERSION}" | tr -cs 'a-zA-Z0-9-' '-' | sed 's/-$//')
+          branch_name="bump-${safe_app}-${safe_version}-$(date +%Y-%m-%dT%H-%M-%S)"
+          git switch --create "${branch_name}"
+          echo "branch_name=${branch_name}" >> $GITHUB_OUTPUT
+        env:
+          INPUTS_APP_NAME: ${{ inputs.app_name }}
+          INPUTS_VERSION: ${{ inputs.version }}
+
+      - name: Commit, push and create PR
+        id: git_push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
+
+          git diff --cached --quiet \
+            && { echo "No changes to commit"; echo "changes=false" >> $GITHUB_OUTPUT; exit 0; } \
+            || echo "changes=true" >> $GITHUB_OUTPUT
+
           git commit -m "promote: ${INPUTS_APP_NAME} to ${INPUTS_VERSION} in ${INPUTS_ENVIRONMENT}"
-          git push
+          git push --set-upstream origin "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}"
+
+          gh pr create --base main --head "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" \
+            --title "Promote ${INPUTS_APP_NAME}:${INPUTS_VERSION} to ${INPUTS_ENVIRONMENT}" \
+            --body "Automated promotion of **${INPUTS_APP_NAME}** to version \`${INPUTS_VERSION}\` in **${INPUTS_ENVIRONMENT}**."
         env:
+          GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           INPUTS_APP_NAME: ${{ inputs.app_name }}
           INPUTS_VERSION: ${{ inputs.version }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+          STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME: ${{ steps.git_branch.outputs.branch_name }}
+
+      - name: Enable auto-merge for PR
+        if: steps.git_push.outputs.changes == 'true' && contains(format(',{0},', inputs.automerge_envs), format(',{0},', inputs.environment))
+        run: |
+          gh pr merge "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" --auto --merge
+        env:
+          GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME: ${{ steps.git_branch.outputs.branch_name }}
