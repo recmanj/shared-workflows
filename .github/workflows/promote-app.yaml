@@ -153,6 +153,7 @@ jobs:
           gh pr create --base main --head "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" \
             --title "Promote ${INPUTS_APP_NAME}:${INPUTS_VERSION} to ${INPUTS_ENVIRONMENT}" \
             --body "Automated promotion of **${INPUTS_APP_NAME}** to version \`${INPUTS_VERSION}\` in **${INPUTS_ENVIRONMENT}**.
+          Triggered by @${GITHUB_TRIGGERING_ACTOR}.
           <!-- AUTO-PROMOTE-PR app=${INPUTS_APP_NAME} version=${INPUTS_VERSION} env=${INPUTS_ENVIRONMENT} -->"
         env:
           GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
@@ -160,6 +161,7 @@ jobs:
           INPUTS_VERSION: ${{ inputs.version }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME: ${{ steps.git_branch.outputs.branch_name }}
+          GITHUB_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
 
       - name: Enable auto-merge for PR
         if: steps.git_push.outputs.changes == 'true' && contains(format(',{0},', inputs.automerge_envs), format(',{0},', inputs.environment))
