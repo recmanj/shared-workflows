@@ -28,11 +28,11 @@ on:
         required: false
         type: string
         default: ""
-      kustomize_app:
-        description: "Kustomize app directory name (default: demo-app)"
+      app_path:
+        description: "Base path to the app's environment configs. Defaults to 'apps/apps-helm' for helm, 'demo-app' for kustomize."
         required: false
         type: string
-        default: "demo-app"
+        default: ""
       automerge_envs:
         description: "Environments for which promotion PRs should be auto-merged. Comma-separated list (no spaces), e.g. 'test,staging'"
         required: false
@@ -66,7 +66,8 @@ jobs:
       - name: Update chart version (Helm)
         if: inputs.deployment_type == 'helm'
         run: |
-          CONFIG_FILE="apps/apps-helm/${INPUTS_APP_NAME}/envs/${INPUTS_ENVIRONMENT}/config.json"
+          APP_PATH="${INPUTS_APP_PATH:-apps/apps-helm}"
+          CONFIG_FILE="${APP_PATH}/${INPUTS_APP_NAME}/envs/${INPUTS_ENVIRONMENT}/config.json"
           if [ ! -f "$CONFIG_FILE" ]; then
             echo "Error: $CONFIG_FILE not found"
             exit 1
@@ -75,6 +76,7 @@ jobs:
           echo "Updated $CONFIG_FILE:"
           cat "$CONFIG_FILE"
         env:
+          INPUTS_APP_PATH: ${{ inputs.app_path }}
           INPUTS_APP_NAME: ${{ inputs.app_name }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_VERSION: ${{ inputs.version }}
@@ -82,7 +84,8 @@ jobs:
       - name: Update image tag (Kustomize)
         if: inputs.deployment_type == 'kustomize'
         run: |
-          VERSIONS_FILE="apps/apps-kustomize/${INPUTS_KUSTOMIZE_APP}/envs/${INPUTS_ENVIRONMENT}/versions.yaml"
+          APP_PATH="${INPUTS_APP_PATH:-demo-app}"
+          VERSIONS_FILE="${APP_PATH}/envs/${INPUTS_ENVIRONMENT}/versions.yaml"
           if [ ! -f "$VERSIONS_FILE" ]; then
             echo "Error: $VERSIONS_FILE not found"
             exit 1
@@ -91,7 +94,7 @@ jobs:
           echo "Updated $VERSIONS_FILE:"
           cat "$VERSIONS_FILE"
         env:
-          INPUTS_KUSTOMIZE_APP: ${{ inputs.kustomize_app }}
+          INPUTS_APP_PATH: ${{ inputs.app_path }}
           INPUTS_ENVIRONMENT: ${{ inputs.environment }}
           INPUTS_APP_NAME: ${{ inputs.app_name }}
           INPUTS_IMAGE_NAME: ${{ inputs.image_name }}
