@@ -139,7 +139,8 @@ jobs:
       - name: Enable auto-merge for PR
         if: steps.git_push.outputs.changes == 'true' && contains(format(',{0},', inputs.automerge_envs), format(',{0},', inputs.environment))
         run: |
-          gh pr merge "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" --auto --merge
+          gh pr merge "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" --auto --merge \
+          || gh pr merge "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" --merge
         env:
           GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME: ${{ steps.git_branch.outputs.branch_name }}
