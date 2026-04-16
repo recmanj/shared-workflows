@@ -112,6 +112,30 @@ jobs:
           INPUTS_APP_NAME: ${{ inputs.app_name }}
           INPUTS_VERSION: ${{ inputs.version }}
 
+      - name: Close stale promotion PRs
+        run: |
+          stale_prs=$(gh pr list \
+            --state open \
+            --search "\"AUTO-PROMOTE-PR\" \"app=${INPUTS_APP_NAME}\" \"env=${INPUTS_ENVIRONMENT}\" in:body" \
+            --json number,headRefName \
+            --jq '.[] | "\(.number)\t\(.headRefName)"')
+
+          if [ -z "$stale_prs" ]; then
+            echo "No stale promotion PRs found"
+            exit 0
+          fi
+
+          echo "$stale_prs" | while IFS=$'\t' read -r pr_number branch_name; do
+            echo "Closing stale PR #${pr_number} (branch: ${branch_name})"
+            gh pr close "$pr_number" \
+              --comment "Superseded by a newer promotion of ${INPUTS_APP_NAME} to ${INPUTS_ENVIRONMENT}." \
+              --delete-branch
+          done
+        env:
+          GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
+          INPUTS_APP_NAME: ${{ inputs.app_name }}
+          INPUTS_ENVIRONMENT: ${{ inputs.environment }}
+
       - name: Commit, push and create PR
         id: git_push
         run: |
@@ -128,7 +152,8 @@ jobs:
 
           gh pr create --base main --head "${STEPS_GIT_BRANCH_OUTPUTS_BRANCH_NAME}" \
             --title "Promote ${INPUTS_APP_NAME}:${INPUTS_VERSION} to ${INPUTS_ENVIRONMENT}" \
-            --body "Automated promotion of **${INPUTS_APP_NAME}** to version \`${INPUTS_VERSION}\` in **${INPUTS_ENVIRONMENT}**."
+            --body "Automated promotion of **${INPUTS_APP_NAME}** to version \`${INPUTS_VERSION}\` in **${INPUTS_ENVIRONMENT}**.
+          <!-- AUTO-PROMOTE-PR app=${INPUTS_APP_NAME} version=${INPUTS_VERSION} env=${INPUTS_ENVIRONMENT} -->"
         env:
           GH_TOKEN: ${{ secrets.ARGOCD_REPO_TOKEN }} # zizmor: ignore[secrets-outside-env]
           INPUTS_APP_NAME: ${{ inputs.app_name }}
